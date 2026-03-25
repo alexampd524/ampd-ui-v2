@@ -5,6 +5,57 @@
 // Apply saved theme immediately
 try { document.documentElement.setAttribute('data-theme', localStorage.getItem('ampd-theme') || 'light'); } catch(e) {}
 
+// ───────────────────────────────────────────────────────────────────────────
+// AUTH — Keycloak integration
+// ───────────────────────────────────────────────────────────────────────────
+var AMPD_API = 'https://app.ampd.solutions/api';
+
+var _kc = null;
+
+function ampdFetch(url, opts) {
+  opts = opts || {};
+  opts.headers = opts.headers || {};
+  if (_kc && _kc.token) {
+    opts.headers['Authorization'] = 'Bearer ' + _kc.token;
+  }
+  return fetch(url, opts);
+}
+
+function initKeycloak(onReady) {
+  if (typeof Keycloak === 'undefined') {
+    console.warn('Keycloak JS not loaded — running in mock/dev mode');
+    onReady(false);
+    return;
+  }
+  _kc = new Keycloak({
+    url: 'https://auth.ampd.solutions',
+    realm: 'ampd',
+    clientId: 'ampd-ui'
+  });
+  _kc.init({
+    onLoad: 'login-required',
+    checkLoginIframe: false,
+    pkceMethod: 'S256'
+  }).then(function(authenticated) {
+    if (!authenticated) { _kc.login(); return; }
+    // Refresh token 30s before expiry
+    setInterval(function() {
+      _kc.updateToken(30).catch(function() { _kc.login(); });
+    }, 30000);
+    onReady(true);
+  }).catch(function(err) {
+    console.error('Keycloak init error:', err);
+    onReady(false);
+  });
+}
+
+// Boot — init Keycloak then start the app
+initKeycloak(function(authenticated) {
+  if (authenticated) {
+    console.log('✅ Authenticated as', _kc.tokenParsed.email || _kc.tokenParsed.preferred_username);
+  }
+});
+
 // Auto-highlight sidebar and mobile nav for current page
 (function() {
   var path = window.location.pathname.split('/').pop() || 'index.html';
